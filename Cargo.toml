@@ -1,0 +1,10 @@
+[package]
+name = "atomic-io"
+version = "0.1.0"
+authors = ["Aaron Brodersen <aaron@resin.io>"]
+
+[dependencies]
+nix = "0.8"
+tempfile = "2.1"
+libc = "0.2"
+errno = "0.2"
