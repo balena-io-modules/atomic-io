@@ -10,6 +10,7 @@ pub use self::imp::*;
 
 use std::fs;
 use std::ffi::{CString, OsString};
+use std::os::unix::fs::MetadataExt;
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::path::{Path, PathBuf};
@@ -30,11 +31,14 @@ pub fn clone(src: &mut fs::File, dest: &mut fs::File) {
 
 /// Given a directory, return a `File` representing a temporary file
 /// handle. On Unix, this returns an anonymous file that is unlinked.
-pub fn get_tempfile(dir: &Path) -> (fs::File, Option<PathBuf>) {
-    use self::stat::*;
+pub fn get_tempfile(dir: &Path, meta: &fs::Metadata) -> (fs::File, Option<PathBuf>) {
+    use self::stat::Mode;
     use self::fcntl::*;
 
-    let fd = fcntl::open(dir, O_TMPFILE | O_RDWR, S_IRUSR | S_IWUSR).unwrap();
+    // mask off type bits
+    let mode_bits = meta.mode() & 0o7777;
+    let mode = Mode::from_bits(mode_bits).unwrap();
+    let fd = fcntl::open(dir, O_TMPFILE | O_RDWR, mode).unwrap();
     let file = unsafe { fs::File::from_raw_fd(fd) };
     (file, None)
 }

@@ -41,8 +41,6 @@ fn swap_files(old: &Path, new: &Path) {
 
 /// Link an anonymous file into the file system using the `linkat` function in `libc`.
 fn link_at(old: &Path, new: &Path) {
-    println!("link source = {:?}, link dest = {:?}", old, new);
-
     let src = to_cstring(OsString::from(old)).unwrap();
     let dest = to_cstring(OsString::from(&new)).unwrap();
     let err = unsafe { linkat(AT_FDCWD, src.as_ptr(), AT_FDCWD, dest.as_ptr(), AT_SYMLINK_FOLLOW) };

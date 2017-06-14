@@ -17,8 +17,10 @@ pub struct AtomicFile {
 impl AtomicFile {
     /// Opens an atomic file for reading and writing
     pub fn open<P: AsRef<Path>>(path: P) -> AtomicFile {
-        let dir = path.as_ref().parent().unwrap();
-        let (mut temp, name) = platform::get_tempfile(dir);
+        let metadata = fs::metadata(path.as_ref()).unwrap();
+        let absolute = path.as_ref().canonicalize().unwrap();
+        let dir = absolute.parent().unwrap();
+        let (mut temp, name) = platform::get_tempfile(dir, &metadata);
 
         {
             let mut original = fs::File::open(path.as_ref()).unwrap();

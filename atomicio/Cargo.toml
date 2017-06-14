@@ -1,0 +1,10 @@
+[package]
+name = "atomicio"
+version = "0.1.0"
+authors = ["Aaron Brodersen <aaron@resin.io>"]
+
+[dependencies]
+clap = "2.24"
+
+[dependencies.libatomicio]
+path = "../libatomicio"
