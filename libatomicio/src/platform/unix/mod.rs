@@ -7,9 +7,11 @@ extern crate libc;
 mod imp;
 
 pub use self::imp::*;
+pub use errors::*;
 
 use std::fs;
 use std::ffi::{CString, OsString};
+use std::io;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::io::{AsRawFd, FromRawFd};
@@ -19,42 +21,54 @@ use self::nix::sys::sendfile::sendfile;
 use self::nix::sys::stat;
 use self::nix::fcntl;
 
+impl From<nix::Error> for Error {
+    fn from(_: nix::Error) -> Error {
+        ErrorKind::Platform.into()
+    }
+}
+
 /// Used to clone the original data into the temporary file.
 /// On Unix, we use sendfile to perform a fast copy.
-pub fn clone(src: &mut fs::File, dest: &mut fs::File) {
+pub fn clone(src: &mut fs::File, dest: &mut fs::File) -> Result<()> {
     let src_fd = src.as_raw_fd();
     let dest_fd = dest.as_raw_fd();
     let len = src.metadata().unwrap().len() as usize;
 
-    sendfile(dest_fd, src_fd, None, len).unwrap();
+    sendfile(dest_fd, src_fd, None, len)?;
+
+    Ok(())
 }
 
 /// Given a directory, return a `File` representing a temporary file
 /// handle. On Unix, this returns an anonymous file that is unlinked.
-pub fn get_tempfile(dir: &Path, meta: &fs::Metadata) -> (fs::File, Option<PathBuf>) {
+pub fn get_tempfile(dir: &Path, meta: &fs::Metadata) -> Result<(fs::File, Option<PathBuf>)> {
     use self::stat::Mode;
     use self::fcntl::*;
 
     // mask off type bits
     let mode_bits = meta.mode() & 0o7777;
-    let mode = Mode::from_bits(mode_bits).unwrap();
-    let fd = fcntl::open(dir, O_TMPFILE | O_RDWR, mode).unwrap();
+    let mode = Mode::from_bits(mode_bits)
+        .ok_or_else(|| Error::from(ErrorKind::Platform))?;
+    let fd = fcntl::open(dir, O_TMPFILE | O_RDWR, mode)?;
     let file = unsafe { fs::File::from_raw_fd(fd) };
-    (file, None)
+    Ok((file, None))
 }
 
 /// Get a name for the temproary file. In order to swap the file,
 /// we must first link it. This creates a temporary name for the 
 /// link until we can swap the file.
-fn get_tempfile_name(original: &Path) -> PathBuf {
-    let name = original.file_name().unwrap();
-    let swap = format!(".{}.swp", name.to_str().unwrap());
+fn get_tempfile_name(original: &Path) -> Result<PathBuf> {
+    let name = original.file_name()
+        .and_then(|os| os.to_str())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "invalid file name"))?;
+    
+    let swap = format!(".{}.swp", name);
 
     let mut buffer = PathBuf::from(original);
     buffer.pop();
     buffer.push(swap);
 
-    buffer
+    Ok(buffer)
 }
 
 /// Helper function to convert an `OsString` to a `CString`.
@@ -81,7 +95,7 @@ mod tests {
         original.seek(SeekFrom::Start(0)).unwrap();
 
         let mut cloned = tempfile::tempfile().unwrap();
-        clone(&mut original, &mut cloned);
+        clone(&mut original, &mut cloned).unwrap();
 
         cloned.seek(SeekFrom::Start(0)).unwrap();
 

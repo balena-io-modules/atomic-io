@@ -1,9 +1,32 @@
 
+#![recursion_limit = "1024"]
+
+#[macro_use]
+extern crate error_chain;
+
 mod platform;
 
 use std::fs;
-use std::io::{Result, Read, Write, Seek, SeekFrom};
+use std::io::{self, Read, Write, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+
+mod errors {
+    use std::io;
+
+    error_chain! {
+        foreign_links {
+            Io(io::Error) #[doc = "Error during I/O"];
+        }
+
+        errors {
+            Platform {
+                description("platform-specific error occured")
+            }
+        }
+    }
+}
+
+pub use errors::*;
 
 /// The `AtomicFile` struct represents a copy of the underlying file that
 /// is readable and writable. When the required changes have been made,
@@ -16,61 +39,64 @@ pub struct AtomicFile {
 
 impl AtomicFile {
     /// Opens an atomic file for reading and writing
-    pub fn open<P: AsRef<Path>>(path: P) -> AtomicFile {
-        let metadata = fs::metadata(path.as_ref()).unwrap();
-        let absolute = path.as_ref().canonicalize().unwrap();
-        let dir = absolute.parent().unwrap();
-        let (mut temp, name) = platform::get_tempfile(dir, &metadata);
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<AtomicFile> {
+        let metadata = fs::metadata(path.as_ref())?;
+        let absolute = path.as_ref().canonicalize()?;
+        let dir = absolute.parent()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no parent directory"))?;
+        let (mut temp, name) = platform::get_tempfile(dir, &metadata)?;
 
         {
-            let mut original = fs::File::open(path.as_ref()).unwrap();
-            platform::clone(&mut original, &mut temp);
+            let mut original = fs::File::open(path.as_ref())?;
+            platform::clone(&mut original, &mut temp)?;
         }
 
-        temp.seek(SeekFrom::Start(0)).unwrap();
+        temp.seek(SeekFrom::Start(0))?;
 
-        AtomicFile { 
+        Ok(AtomicFile { 
             tmpfile: temp, 
             orig: path.as_ref().to_path_buf(),
-            tmpname: name,    
-        }
+            tmpname: name,
+        })
     }
 
     /// Commits the changes made to the original file
-    pub fn commit(mut self) {
-        self.tmpfile.flush().unwrap();
-        self.tmpname = platform::atomic_swap(&self.orig, &mut self.tmpfile);
+    pub fn commit(mut self) -> Result<()> {
+        self.tmpfile.flush()?;
+        self.tmpname = platform::atomic_swap(&self.orig, &mut self.tmpfile)?;
+        Ok(())
     }
 }
 
 impl Write for AtomicFile {
-    fn write(&mut self, buf: &[u8]) -> Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.tmpfile.write(buf)
     }
 
-    fn flush(&mut self) -> Result<()> { self.tmpfile.flush() }
+    fn flush(&mut self) -> io::Result<()> { self.tmpfile.flush() }
 }
 
 impl Read for AtomicFile {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.tmpfile.read(buf)
     }
 
-    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> Result<usize> {
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
         self.tmpfile.read_to_end(buf)
     }
 }
 
 impl Seek for AtomicFile {
-    fn seek(&mut self, pos: SeekFrom) -> Result<u64> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         self.tmpfile.seek(pos)
     }
 }
 
 impl Drop for AtomicFile {
+    #[allow(unused_must_use)]
     fn drop(&mut self) {
         if let Some(ref name) = self.tmpname {
-            fs::remove_file(name).unwrap();
+            fs::remove_file(name);
         }
     }
 }
@@ -105,7 +131,7 @@ mod tests {
         let expected = "Hello World!";
 
         let file = init(expected);
-        let atomic = AtomicFile::open(file.path());
+        let atomic = AtomicFile::open(file.path()).unwrap();
         
         let result = read(atomic);
         assert_eq!(expected, result);
@@ -116,7 +142,7 @@ mod tests {
         let expected = "foo";
 
         let file = init(expected);
-        let mut atomic = AtomicFile::open(file.path());
+        let mut atomic = AtomicFile::open(file.path()).unwrap();
         write!(atomic, "{}", "bar").unwrap();
         
         let result = read(file.reopen().unwrap());
@@ -130,7 +156,7 @@ mod tests {
 
         let file = init(expected);
 
-        let mut atomic = AtomicFile::open(file.path());
+        let mut atomic = AtomicFile::open(file.path()).unwrap();
         write!(atomic, "{}", "bar").unwrap();
 
         drop(atomic);
@@ -145,10 +171,10 @@ mod tests {
         let expected = "bar";
 
         let file = init("foo");
-        let mut atomic = AtomicFile::open(file.path());
+        let mut atomic = AtomicFile::open(file.path()).unwrap();
         write!(atomic, "{}", expected).unwrap();
 
-        atomic.commit();
+        atomic.commit().unwrap();
         
         let opened = File::open(file.path()).unwrap();
         let result = read(opened);
