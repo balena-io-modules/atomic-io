@@ -1,7 +1,4 @@
 
-extern crate nix;
-extern crate libc;
-
 #[cfg(target_os = "linux")]
 #[path = "linux.rs"]
 mod imp;
@@ -17,15 +14,9 @@ use std::os::unix::ffi::OsStringExt;
 use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::path::{Path, PathBuf};
 
-use self::nix::sys::sendfile::sendfile;
-use self::nix::sys::stat;
-use self::nix::fcntl;
-
-impl From<nix::Error> for Error {
-    fn from(_: nix::Error) -> Error {
-        ErrorKind::Platform.into()
-    }
-}
+use nix::sys::sendfile::sendfile;
+use nix::sys::stat;
+use nix::fcntl;
 
 /// Used to clone the original data into the temporary file.
 /// On Unix, we use sendfile to perform a fast copy.

@@ -3,6 +3,9 @@
 
 #[macro_use]
 extern crate error_chain;
+extern crate libc;
+extern crate errno;
+extern crate nix;
 
 mod platform;
 
@@ -12,15 +15,18 @@ use std::path::{Path, PathBuf};
 
 mod errors {
     use std::io;
+    use nix;
 
     error_chain! {
         foreign_links {
             Io(io::Error) #[doc = "Error during I/O"];
+            Unix(nix::Error) #[doc = "Error from Unix operation"];
         }
 
         errors {
             Platform {
                 description("platform-specific error occured")
+                display("platform error")
             }
         }
     }

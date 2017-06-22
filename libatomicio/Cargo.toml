@@ -6,6 +6,7 @@ authors = ["Aaron Brodersen <aaron@resin.io>"]
 [dependencies]
 nix = "0.8"
 tempfile = "2.1"
+tempdir = "0.3"
 libc = "0.2"
 errno = "0.2"
 error-chain = "0.10"
